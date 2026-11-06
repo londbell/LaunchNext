@@ -19,11 +19,16 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      DERIVED_DATA_PATH: ${{ runner.temp }}/LaunchNext-DerivedData
-      DIST_PATH: ${{ runner.temp }}/LaunchNext-dist
-      STAGING_PATH: ${{ runner.temp }}/LaunchNext-dmg
     steps:
+      - name: Initialize build paths
+        run: |
+          set -euo pipefail
+          {
+            printf 'DERIVED_DATA_PATH=%s/LaunchNext-DerivedData\n' "${RUNNER_TEMP}"
+            printf 'DIST_PATH=%s/LaunchNext-dist\n' "${RUNNER_TEMP}"
+            printf 'STAGING_PATH=%s/LaunchNext-dmg\n' "${RUNNER_TEMP}"
+          } >> "${GITHUB_ENV}"
+
       - name: Check out source
         uses: actions/checkout@v4
         with:
