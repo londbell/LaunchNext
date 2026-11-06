@@ -250,7 +250,7 @@ enum CJKTransliterator {
         return previous[right.count]
     }
 
-    private static func isHan(_ scalar: Unicode.Scalar) -> Bool {
+    nonisolated private static func isHan(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 0x3400...0x4DBF,
              0x4E00...0x9FFF,
@@ -263,7 +263,7 @@ enum CJKTransliterator {
         }
     }
 
-    private static func isKana(_ scalar: Unicode.Scalar) -> Bool {
+    nonisolated private static func isKana(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 0x3040...0x30FF,
              0x31F0...0x31FF,
@@ -274,7 +274,7 @@ enum CJKTransliterator {
         }
     }
 
-    private static func isHangul(_ scalar: Unicode.Scalar) -> Bool {
+    nonisolated private static func isHangul(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 0x1100...0x11FF,
              0x3130...0x318F,

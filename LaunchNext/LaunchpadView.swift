@@ -333,7 +333,7 @@ struct LaunchpadView: View {
          }
     }
 
-    private var launchpadEventBoundView: some View {
+    private var launchpadInputBoundView: some View {
         launchpadBaseView
         .sheet(isPresented: $appStore.isSetting) {
             SettingsView(appStore: appStore)
@@ -378,6 +378,10 @@ struct LaunchpadView: View {
              appStore.layoutRevealRequest = nil
              handleControllerCommand(command)
          }
+    }
+
+    private var launchpadWallpaperBoundView: some View {
+        launchpadInputBoundView
          .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.activeSpaceDidChangeNotification)) { _ in
              WallpaperDiagnostics.record("context.spaceChanged")
              refreshBackgroundImage(reason: .contextChecked)
@@ -412,10 +416,7 @@ struct LaunchpadView: View {
              refreshBackgroundImage(reason: .settingsChanged)
          }
          .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-             if appStore.backgroundImageEnabled,
-                appStore.backgroundImageSource == .desktopWallpaper {
-                 WallpaperCaptureAccess.shared.refresh()
-             }
+             refreshWallpaperCaptureAccessIfNeeded()
          }
          .onChange(of: appStore.backgroundImageSource) { _, _ in
              refreshBackgroundImage(reason: .settingsChanged)
@@ -423,7 +424,10 @@ struct LaunchpadView: View {
          .onChange(of: appStore.customBackgroundImagePath) { _, _ in
              refreshBackgroundImage(reason: .settingsChanged)
          }
+    }
 
+    private var launchpadLifecycleBoundView: some View {
+        launchpadWallpaperBoundView
            .onAppear {
               if !appStore.shouldShowOnboarding {
                   appStore.performInitialScanIfNeeded()
@@ -487,6 +491,10 @@ struct LaunchpadView: View {
             stopFPSMonitoring()
             backgroundImageController.clear()
          }
+    }
+
+    private var launchpadEventBoundView: some View {
+        launchpadLifecycleBoundView
         .onChange(of: appStore.shouldShowOnboarding) { wasVisible, visible in
             if wasVisible && !visible {
                 if appStore.isInitialLoading {
@@ -551,6 +559,12 @@ struct LaunchpadView: View {
             appStore.saveAllOrder()
             clampSelection()
         }
+    }
+
+    private func refreshWallpaperCaptureAccessIfNeeded() {
+        guard appStore.backgroundImageEnabled,
+              appStore.backgroundImageSource == .desktopWallpaper else { return }
+        WallpaperCaptureAccess.shared.refresh()
     }
 
     private var launchpadBaseView: some View {
