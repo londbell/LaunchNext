@@ -87,8 +87,8 @@ jobs:
           UPDATER_PATH="${APP_PATH}/Contents/Resources/Updater/SwiftUpdater"
           test -x "${APP_PATH}/Contents/MacOS/LaunchNext"
           test -x "${UPDATER_PATH}"
-          lipo -verify_arch arm64 x86_64 "${APP_PATH}/Contents/MacOS/LaunchNext"
-          lipo -verify_arch arm64 x86_64 "${UPDATER_PATH}"
+          lipo "${APP_PATH}/Contents/MacOS/LaunchNext" -verify_arch arm64 x86_64
+          lipo "${UPDATER_PATH}" -verify_arch arm64 x86_64
 
           # The project's build phase already ad-hoc signs the updater.
           codesign --verify --strict --verbose=2 "${UPDATER_PATH}"
