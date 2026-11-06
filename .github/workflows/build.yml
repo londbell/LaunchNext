@@ -1,0 +1,133 @@
+name: Build LaunchNext
+run-name: Build LaunchNext (${{ inputs.ref || github.ref_name }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or commit to build (leave empty to use the selected branch)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      DERIVED_DATA_PATH: ${{ runner.temp }}/LaunchNext-DerivedData
+      DIST_PATH: ${{ runner.temp }}/LaunchNext-dist
+      STAGING_PATH: ${{ runner.temp }}/LaunchNext-dmg
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Verify toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          XCODE_MAJOR="$(xcodebuild -version | awk '/^Xcode / { split($2, version, "."); print version[1] }')"
+          if [[ "${XCODE_MAJOR}" -lt 26 ]]; then
+            echo "error: LaunchNext requires Xcode 26 or newer." >&2
+            exit 1
+          fi
+          xcrun swift --version
+
+      - name: Build universal updater
+        run: |
+          set -euo pipefail
+          swift build \
+            --package-path UpdaterScripts/SwiftUpdater \
+            --configuration release \
+            --arch arm64 \
+            --arch x86_64 \
+            --product SwiftUpdater
+
+      - name: Build universal app
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project LaunchNext.xcodeproj \
+            -scheme LaunchNext \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath "${DERIVED_DATA_PATH}" \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
+            ENABLE_PREVIEWS=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Ad-hoc sign and create DMG
+        id: package
+        run: |
+          set -euo pipefail
+          APP_PATH="${DERIVED_DATA_PATH}/Build/Products/Release/LaunchNext.app"
+          UPDATER_PATH="${APP_PATH}/Contents/Resources/Updater/SwiftUpdater"
+          test -x "${APP_PATH}/Contents/MacOS/LaunchNext"
+          test -x "${UPDATER_PATH}"
+          lipo -verify_arch arm64 x86_64 "${APP_PATH}/Contents/MacOS/LaunchNext"
+          lipo -verify_arch arm64 x86_64 "${UPDATER_PATH}"
+
+          # The project's build phase already ad-hoc signs the updater.
+          codesign --verify --strict --verbose=2 "${UPDATER_PATH}"
+          codesign --force --sign - --options runtime "${APP_PATH}"
+          codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${APP_PATH}/Contents/Info.plist")"
+          SHORT_SHA="$(git rev-parse --short=12 HEAD)"
+          DMG_NAME="LaunchNext${VERSION}-${SHORT_SHA}-universal.dmg"
+          mkdir -p "${DIST_PATH}" "${STAGING_PATH}"
+          ditto "${APP_PATH}" "${STAGING_PATH}/LaunchNext.app"
+          ln -s /Applications "${STAGING_PATH}/Applications"
+          hdiutil create \
+            -volname LaunchNext \
+            -srcfolder "${STAGING_PATH}" \
+            -fs HFS+ \
+            -format UDZO \
+            "${DIST_PATH}/${DMG_NAME}"
+          hdiutil verify "${DIST_PATH}/${DMG_NAME}"
+          (
+            cd "${DIST_PATH}"
+            shasum -a 256 "${DMG_NAME}" > checksums.txt
+          )
+          echo "dmg_name=${DMG_NAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Store DMG as Actions artifact
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.dmg_name }}
+          path: ${{ env.DIST_PATH }}/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Add download link to summary
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+          DMG_NAME: ${{ steps.package.outputs.dmg_name }}
+        run: |
+          set -euo pipefail
+          {
+            printf '### LaunchNext DMG\n\n'
+            printf '[Download %s](%s)\n\n' "${DMG_NAME}" "${ARTIFACT_URL}"
+            printf 'Actions artifact only; no GitHub Release is created or updated.\n\n'
+            printf 'Universal arm64/x86_64 build. Ad-hoc signed, not Apple notarized.\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
